@@ -44,27 +44,33 @@ if [ rd_cmpr == -1 ] || [ ! -f /tmp/boot/init ] ; then
     return 1
 fi
 
+# Extract ramdisk.cpio
+mkdir /tmp/boot/sbin/rd
+cd /tmp/boot/sbin/rd && cat ../ramdisk.cpio | cpio -i;cd /
+
 # restore init
-if [ -e /tmp/boot/main_init ] ; then
-    rm /tmp/boot/init
-    mv /tmp/boot/main_init /tmp/boot/init
+if [ -e /tmp/boot/sbin/rd/main_init ] ; then
+    rm /tmp/boot/sbin/rd/init
+    mv /tmp/boot/sbin/rd/main_init /tmp/boot/sbin/rd/init
 fi
 
-chmod 750 /tmp/boot/init
+chmod 750 /tmp/boot/sbin/rd/init
 
 # restore ueventd and watchdogd symlink
-if [ -L /tmp/boot/sbin/ueventd ] ; then
-    ln -sf ../init /tmp/boot/sbin/ueventd
+if [ -L /tmp/boot/sbin/rd/sbin/ueventd ] ; then
+    ln -sf ../init /tmp/boot/sbin/rd/sbin/ueventd
 fi
-if [ -L /tmp/boot/sbin/watchdogd ] ; then
-    ln -sf ../init /tmp/boot/sbin/watchdogd
+if [ -L /tmp/boot/sbin/rd/sbin/watchdogd ] ; then
+    ln -sf ../init /tmp/boot/sbin/rd/sbin/watchdogd
 fi
 
-if [ -e /tmp/boot/mrom.fstab ] ; then
-    rm /tmp/boot/mrom.fstab
+if [ -e /tmp/boot/sbin/rd/mrom.fstab ] ; then
+    rm /tmp/boot/sbin/rd/mrom.fstab
 fi
 
 # pack the image again
+cd /tmp/boot/sbin/rd && find . | cpio -o -H newc > ../ramdisk.cpio
+rm -rf /tmp/boot/sbin/rd
 cd /tmp/boot
 
 case $rd_cmpr in
