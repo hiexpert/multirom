@@ -31,6 +31,8 @@
 // https://github.com/Tasssadar/libbootimg.git
 #include <libbootimg.h>
 
+int system(const char *command);
+
 #if LIBBOOTIMG_VERSION  < 0x000200
 #error "libbootimg version 0.2.0 or higher is required. Please update libbootimg."
 #endif
@@ -49,6 +51,27 @@ static int copy_rd_files(const char *path, const char *busybox_path)
 {
     char buf[256];
 
+    if (access(TMP_RD_UNPACKED_DIR"/sbin/ramdisk.cpio", F_OK) < 0)
+        #define TMP_COMBINED_RD TMP_RD_UNPACKED_DIR"/sbin/rd2"
+        system("mkdir /tmp/mrom_rd/sbin/rd2");
+        system("cd /tmp/mrm_rd/sbin/rd2 && cat ../ramdisk.cpio | cpio -i");
+
+#ifdef TMP_COMBINED_RD
+    if (access(TMP_COMBINED_RD"/main_init", F_OK) < 0 &&
+        rename(TMP_COMBINED_RD"/init", TMP_COMBINED_RD"/main_init") < 0)
+    {
+        ERROR("Failed to move /init to /main_init!\n");
+        return -1;
+    }
+
+    snprintf(buf, sizeof(buf), "%s/trampoline", mrom_dir());
+    if(copy_file(buf, TMP_COMBINED_RD"/init") < 0)
+    {
+        ERROR("Failed to copy trampoline to /init!\n");
+        return -1;
+    }
+    chmod(TMP_COMBINED_RD"/init", 0750);
+#else
     if (access(TMP_RD_UNPACKED_DIR"/main_init", F_OK) < 0 &&
         rename(TMP_RD_UNPACKED_DIR"/init", TMP_RD_UNPACKED_DIR"/main_init") < 0)
     {
@@ -63,15 +86,37 @@ static int copy_rd_files(const char *path, const char *busybox_path)
         return -1;
     }
     chmod(TMP_RD_UNPACKED_DIR"/init", 0750);
+#endif
 
 #ifdef MR_USE_MROM_FSTAB
+#ifdef TMP_COMBINED_RD
+    snprintf(buf, sizeof(buf), "%s/mrom.fstab", mrom_dir());
+    copy_file(buf, TMP_COMBINED_RD"/mrom.fstab");
+#else
     snprintf(buf, sizeof(buf), "%s/mrom.fstab", mrom_dir());
     copy_file(buf, TMP_RD_UNPACKED_DIR"/mrom.fstab");
+#endif
+#else
+#ifdef TMP_COMBINED_RD
+    remove(TMP_COMBINED_RD"/mrom.fstab");
 #else
     remove(TMP_RD_UNPACKED_DIR"/mrom.fstab");
 #endif
+#endif
 
 #ifdef MR_ENCRYPTION
+#ifdef TMP_COMBINED_RD
+    remove_dir(TMP_COMBINED_RD"/mrom_enc");
+
+    char *cmd[] = { busybox_path, "sh", "-c", buf, NULL };
+    snprintf(buf, sizeof(buf), "\"%s\" cp -a \"%s/enc\" \"%s/mrom_enc\"", busybox_path, mrom_dir(), TMP_COMBINED_RD);
+
+    if(run_cmd(cmd) != 0)
+    {
+        ERROR("Failed to copy encryption files!\n");
+        return -1;
+    }
+#else
     remove_dir(TMP_RD_UNPACKED_DIR"/mrom_enc");
 
     char *cmd[] = { busybox_path, "sh", "-c", buf, NULL };
@@ -82,6 +127,7 @@ static int copy_rd_files(const char *path, const char *busybox_path)
         ERROR("Failed to copy encryption files!\n");
         return -1;
     }
+#endif
 #endif
     return 0;
 }
@@ -141,6 +187,10 @@ static int inject_rd(const char *path)
         goto fail;
 
     // Pack initrd again
+#ifdef TMP_COMBINED_RD
+    system("/tmp/mrom_rd/sbin/rd2 && find . | cpio -o -H newc > ../ramdisk.cpio");
+    system("rm -rf /tmp/mrom_rd/sbin/rd2");
+#endif
     switch(type)
     {
         case RD_GZIP:
